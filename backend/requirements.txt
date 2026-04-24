@@ -1,0 +1,12 @@
+fastapi
+uvicorn
+sqlalchemy
+psycopg2-binary
+redis
+langgraph
+langchain
+langchain-openai
+pydantic
+pydantic-settings
+python-dotenv
+websockets
