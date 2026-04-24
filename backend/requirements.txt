@@ -6,7 +6,13 @@ redis
 langgraph
 langchain
 langchain-openai
-pydantic
+pydantic[email]
 pydantic-settings
 python-dotenv
 websockets
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart
+httpx
+cryptography
+authlib

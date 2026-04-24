@@ -66,7 +66,24 @@ The system is designed as an **Agentic Workflow** where a central **Supervisor A
 
 ---
 
-## 5. Deployment Strategy
+## 6. Safety & Governance
+
+The platform implements a "Defense in Depth" strategy for agentic commerce:
+
+- **Identity & Auth**: JWT-based session management with stubs for multi-provider OAuth2 and passwordless magic links.
+- **Data Privacy**: Sensitive user data (budget, shipping addresses, brand preferences) is stored in a `user_preferences` table using AES-256 field-level encryption.
+- **Payment Security**: Follows PCI-DSS best practices by utilizing a Payment Token Vault. Local databases never store PAN (Primary Account Number); they only store tokenized references provided by Stripe/Adyen.
+- **Financial Controls**:
+    - **Soft Limits**: Per-transaction and daily spending caps enforced at the API level.
+    - **Hard Stops**: Implicitly defined by the payment provider's authorization.
+- **Human-in-the-Loop (HITL)**:
+    - No transaction can be executed without an `ApprovalRequest`.
+    - The system generates a human-readable bundle: **Product + Merchant + Full Cost (incl. Tax/Ship) + Agent Reasoning**.
+    - User must provide explicit opt-in via a signed response to the approval endpoint.
+
+---
+
+## 7. Deployment Strategy
 - **Containerization**: Docker for all services.
 - **Orchestration**: Kubernetes for scaling agent workers.
 - **Monitoring**: OpenTelemetry for tracing agent decision logs.
