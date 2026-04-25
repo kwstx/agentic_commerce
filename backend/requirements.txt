@@ -20,3 +20,6 @@ playwright
 beautifulsoup4
 gql
 aioredis
+sentence-transformers
+numpy
+scikit-learn

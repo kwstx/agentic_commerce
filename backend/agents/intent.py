@@ -12,6 +12,7 @@ class IntentConstraints(BaseModel):
     preferred_brands: List[str] = Field(default_factory=list, description="Brands the user prefers or specifically mentioned.")
     service_specifics: Dict[str, Any] = Field(default_factory=dict, description="Specifics for bookings or services (date, time, location, etc.).")
     currency: str = Field("USD", description="The currency for the budget.")
+    discovery_strategy: Literal["parallel", "sequential"] = Field("parallel", description="Whether to search merchants in parallel or sequentially.")
 
 class ExecutionStep(BaseModel):
     phase: Literal["discovery", "comparison", "transaction", "clarification"]
