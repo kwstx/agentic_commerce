@@ -7,8 +7,10 @@ from backend.agents.discovery import DiscoveryService, DiscoveryQuery, Product
 import operator
 import os
 
-# Initialize Discovery Service
+# Initialize Services
 discovery_service = DiscoveryService()
+from backend.agents.intent import IntentAgent
+intent_agent = IntentAgent()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 # Removed mock tools as they are replaced by DiscoveryService logic
@@ -17,7 +19,9 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     next_step: str
-    intent_data: dict
+    intent_data: dict # Extracted constraints
+    execution_plan: List[dict]
+    is_ambiguous: bool
     discovery_results: List[dict]
     comparison_summary: str
     transaction_status: str
@@ -28,33 +32,37 @@ class AgentState(TypedDict):
 async def intent_parser(state: AgentState):
     print("--- AGENT: INTENT PARSER ---")
     user_input = state['messages'][-1].content
+    history = state['messages'][:-1]
     
-    # Use LLM to convert natural language to structured DiscoveryQuery
-    parser_prompt = f"""
-    Analyze the user request and extract search parameters for product discovery.
-    Request: {user_input}
-    """
+    # Use IntentAgent for deep analysis and planning
+    parsed_intent = await intent_agent.parse(user_input, history)
     
-    # Bind the DiscoveryQuery to the LLM for structured output
-    structured_llm = llm.with_structured_output(DiscoveryQuery)
-    try:
-        discovery_query = await structured_llm.ainvoke(parser_prompt)
-        intent = discovery_query.dict()
-    except Exception as e:
-        print(f"Error in intent parsing: {e}")
-        # Fallback basic intent
-        intent = {"query": user_input, "limit": 5}
+    if parsed_intent.is_ambiguous:
+        return {
+            "is_ambiguous": True,
+            "next_step": "ask_clarification",
+            "messages": [AIMessage(content=parsed_intent.clarification_question)]
+        }
 
     return {
-        "intent_data": intent, 
+        "intent_data": parsed_intent.extracted_constraints.dict(),
+        "execution_plan": [step.dict() for step in parsed_intent.plan.steps],
+        "is_ambiguous": False,
         "next_step": "discovery",
-        "messages": [AIMessage(content=f"Searching for: {intent.get('query')} (Max Price: {intent.get('max_price', 'N/A')})")]
+        "messages": [AIMessage(content=parsed_intent.summary)]
     }
 
 async def product_discovery(state: AgentState):
     print("--- AGENT: PRODUCT DISCOVERY ---")
-    intent_data = state['intent_data']
-    query = DiscoveryQuery(**intent_data)
+    constraints = state['intent_data']
+    
+    # Map constraints to DiscoveryQuery
+    query = DiscoveryQuery(
+        query=constraints.get('search_query', 'product'),
+        max_price=constraints.get('budget_ceiling'),
+        category=constraints.get('category'),
+        # Add more mappings as needed
+    )
     
     # Call the DiscoveryService (which handles caching and multi-source)
     results: List[Product] = await discovery_service.search(query)
@@ -111,7 +119,7 @@ workflow.set_entry_point("intent_parser")
 workflow.add_conditional_edges(
     "intent_parser",
     lambda x: x["next_step"],
-    {"discovery": "discovery", "error_recovery": "error_recovery"}
+    {"discovery": "discovery", "ask_clarification": END, "error_recovery": "error_recovery"}
 )
 workflow.add_conditional_edges(
     "discovery",
