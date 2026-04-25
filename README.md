@@ -1,8 +1,6 @@
 # Agentic Commerce: Smart Purchasing System
 
-Agentic Commerce is a modular, multi-agent platform designed to automate the end-to-end shopping experience. By leveraging large language models and specialized agentic workflows, the system enables users to delegate natural language requests—such as product discovery, comparison, and purchase execution—to an autonomous AI system.
-
-The platform integrates directly with commerce providers and payment gateways to handle the entire lifecycle of a transaction, from intent parsing to order confirmation, while maintaining strict security and human-in-the-loop governance.
+Autonomous purchasing.
 
 ## Key Features
 

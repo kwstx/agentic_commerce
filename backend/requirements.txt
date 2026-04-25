@@ -24,7 +24,7 @@ sentence-transformers
 numpy
 scikit-learn
 stripe
-adyen-python-api-library
+Adyen
 opentelemetry-api
 opentelemetry-sdk
 opentelemetry-instrumentation-fastapi
