@@ -3,7 +3,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from backend.database import init_db, SessionLocal
 from backend.redis_client import set_cache, get_cache
 from backend.agents.workflow import app_workflow
-from backend.routers import auth, profile, orders
+from backend.routers import auth, profile, orders, webhooks
 from langchain_core.messages import HumanMessage
 import json
 
@@ -20,6 +20,7 @@ app.add_middleware(
 app.include_router(auth.router)
 app.include_router(profile.router)
 app.include_router(orders.router)
+app.include_router(webhooks.router)
 
 @app.on_event("startup")
 def startup():

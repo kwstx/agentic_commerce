@@ -23,3 +23,5 @@ aioredis
 sentence-transformers
 numpy
 scikit-learn
+stripe
+adyen-python-api-library

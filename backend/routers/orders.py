@@ -3,7 +3,11 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
 from backend.database import User, ApprovalRequest, Transaction, SpendingLimit
 from backend.auth import get_current_user, get_db
-from backend.schemas import ApprovalRequestResponse, TransactionDetail, TransactionSchema
+from backend.schemas import (
+    ApprovalRequestResponse, TransactionDetail, 
+    TransactionSchema, PaymentIntentSchema
+)
+from backend.agents.checkout import CheckoutService
 from typing import List
 
 router = APIRouter(prefix="/orders", tags=["orders"])
@@ -76,3 +80,24 @@ def reject_transaction(request_id: int, current_user: User = Depends(get_current
 @router.get("/pending", response_model=List[ApprovalRequestResponse])
 def get_pending_approvals(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
     return db.query(ApprovalRequest).filter(ApprovalRequest.user_id == current_user.id, ApprovalRequest.status == "pending").all()
+
+@router.post("/confirm-payment/{session_id}", response_model=PaymentIntentSchema)
+async def confirm_order_payment(
+    session_id: str, 
+    payment_method_id: str, 
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Finalizes an order by processing the payment.
+    Ideally called after the user approves a transaction request.
+    """
+    checkout_service = CheckoutService()
+    try:
+        payment_intent = await checkout_service.process_payment(
+            session_id=session_id,
+            payment_method_id=payment_method_id,
+            user_id=str(current_user.id)
+        )
+        return payment_intent
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))

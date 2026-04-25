@@ -126,3 +126,29 @@ class UnifiedCheckoutSession(BaseModel):
     attempts: List[CheckoutAttempt] = []
     final_total: float = 0.0
     status: str = "pending"
+
+# Payment Schemas
+class PaymentMethodVaultItem(BaseModel):
+    id: str
+    provider: str  # 'stripe', 'adyen'
+    last4: str
+    brand: str
+    expiry_month: int
+    expiry_year: int
+    is_default: bool = False
+
+class PaymentIntentSchema(BaseModel):
+    id: str
+    amount: int  # in cents
+    currency: str
+    status: str
+    client_secret: Optional[str] = None
+    next_action: Optional[Dict[str, Any]] = None # For 3D Secure
+
+class PaymentStatus(str):
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    PENDING = "pending"
+    PROCESSING = "processing"
+    REQUIRES_ACTION = "requires_action"
+    CANCELED = "canceled"

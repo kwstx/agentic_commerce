@@ -5,7 +5,7 @@ from typing import List, Dict, Any, Optional
 from datetime import datetime
 from backend.schemas import (
     CartItem, InternalCart, CheckoutAttempt, 
-    UnifiedCheckoutSession, CheckoutStatus
+    UnifiedCheckoutSession, CheckoutStatus, PaymentIntentSchema
 )
 import os
 
@@ -156,3 +156,35 @@ class CheckoutService:
 
     def get_session_status(self, session_id: str) -> Optional[UnifiedCheckoutSession]:
         return self.sessions.get(session_id)
+
+    async def process_payment(self, session_id: str, payment_method_id: str, user_id: str) -> PaymentIntentSchema:
+        """
+        Finalizes checkout by creating a Stripe PaymentIntent.
+        Only called after user confirmation.
+        """
+        session = self.sessions.get(session_id)
+        if not session:
+            raise Exception("Session not found")
+        
+        from backend.payments.stripe_service import StripePaymentService
+        stripe_service = StripePaymentService()
+        
+        # Convert total to cents
+        amount_cents = int(session.final_total * 100)
+        
+        payment_intent = await stripe_service.create_payment_intent(
+            amount=amount_cents,
+            currency="USD",
+            payment_method_id=payment_method_id,
+            user_id=user_id,
+            metadata={"session_id": session_id}
+        )
+        
+        # Update session status
+        if payment_intent.status == "succeeded":
+            session.status = CheckoutStatus.COMPLETED
+        elif payment_intent.status == "requires_action":
+            # Handle 3D Secure / Next Actions
+            session.status = "requires_payment_action"
+        
+        return payment_intent
