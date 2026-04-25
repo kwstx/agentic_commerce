@@ -1,0 +1,74 @@
+name: Agentic Commerce CI/CD
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_PASSWORD: password
+          POSTGRES_DB: agentic_commerce_test
+        ports:
+          - 5432:5432
+        options: --health-cmd pg_isready --health-interval 10s --health-timeout 5s --health-retries 5
+      redis:
+        image: redis:7
+        ports:
+          - 6379:6379
+        options: --health-cmd "redis-cli ping" --health-interval 10s --health-timeout 5s --health-retries 5
+
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+        
+    - name: Install dependencies
+      run: |
+        cd backend
+        python -m pip install --upgrade pip
+        pip install -r requirements.txt
+        pip install pytest pytest-asyncio httpx
+        playwright install --with-deps chromium
+        
+    - name: Run unit tests
+      run: |
+        cd backend
+        pytest tests/unit
+        
+    - name: Run integration tests (Mocked)
+      run: |
+        cd backend
+        pytest tests/integration
+      env:
+        DATABASE_URL: postgresql://postgres:password@localhost:5432/agentic_commerce_test
+        REDIS_URL: redis://localhost:6379/0
+        STRIPE_API_KEY: sk_test_mock
+        GEMINI_API_KEY: mock_key
+
+  build-and-push:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v3
+    
+    - name: Build Docker images
+      run: |
+        docker-compose build
+        
+    # In a real scenario, you would login to DockerHub/ECR and push here
+    # - name: Login to ECR
+    #   uses: aws-actions/amazon-ecr-login@v1
+    # - name: Push images
+    #   run: |
+    #     docker push ...

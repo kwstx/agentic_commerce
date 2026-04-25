@@ -33,3 +33,4 @@ slowapi
 python-json-logger
 guardrails-ai
 bleach
+prometheus-client

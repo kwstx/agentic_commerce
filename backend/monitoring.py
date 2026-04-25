@@ -6,7 +6,14 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
 from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+from prometheus_client import Counter, Histogram, make_asgi_app
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
+
+# Prometheus Metrics
+SEARCH_REQUESTS = Counter('search_requests_total', 'Total search requests', ['status'])
+PURCHASE_REQUESTS = Counter('purchase_requests_total', 'Total purchase requests', ['status'])
+LATENCY = Histogram('request_latency_seconds', 'Request latency in seconds', ['endpoint'])
+TOKEN_COSTS = Counter('llm_token_costs_total', 'Total LLM token costs in USD', ['model'])
 
 def setup_monitoring(app):
     # 1. Structured Logging
@@ -28,18 +35,21 @@ def setup_monitoring(app):
     
     provider = TracerProvider(resource=resource)
     
-    # In production, use OTLPSpanExporter. For demo/dev, we use ConsoleSpanExporter as well.
     # processor = BatchSpanProcessor(OTLPSpanExporter(endpoint="http://otel-collector:4317"))
     # provider.add_span_processor(processor)
     
-    # Fallback to console for visibility in logs
     console_processor = BatchSpanProcessor(ConsoleSpanExporter())
     provider.add_span_processor(console_processor)
     
     trace.set_tracer_provider(provider)
+    
+    # 3. Prometheus Metrics Endpoint
+    metrics_app = make_asgi_app()
+    app.mount("/metrics", metrics_app)
     
     # Instrument FastAPI
     FastAPIInstrumentor.instrument_app(app)
 
 def get_tracer():
     return trace.get_tracer(__name__)
+

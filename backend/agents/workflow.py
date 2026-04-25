@@ -15,8 +15,8 @@ from backend.agents.checkout import CheckoutService, CartItem
 from backend.agents.coordinator import TransactionCoordinator
 from backend.websocket_manager import manager
 from backend.database import SessionLocal
-from backend.monitoring import get_tracer
-from backend.agents.guardrails import sanitize_user_input
+from backend.monitoring import get_tracer, SEARCH_REQUESTS, PURCHASE_REQUESTS, TOKEN_COSTS
+import time
 
 tracer = get_tracer()
 
@@ -93,7 +93,12 @@ async def product_discovery(state: AgentState):
     )
     
     # Call the DiscoveryService (which handles caching and multi-source)
-    results: List[Product] = await discovery_service.search(query)
+    try:
+        results: List[Product] = await discovery_service.search(query)
+        SEARCH_REQUESTS.labels(status="success").inc()
+    except Exception:
+        SEARCH_REQUESTS.labels(status="error").inc()
+        raise
     
     # Convert results to dicts for state
     results_dict = [p.dict() for p in results]
@@ -158,9 +163,11 @@ async def transaction_executor(state: AgentState):
         result = await coordinator.execute_transaction(user_id, [cart_item])
         
         if result['status'] == 'success':
+            PURCHASE_REQUESTS.labels(status="success").inc()
             summary = f"Transaction Successful! Order Confirmation: {result['orders'][0]['confirmation']}"
             status = 'completed'
         else:
+            PURCHASE_REQUESTS.labels(status="failed").inc()
             summary = f"Transaction Failed: {result.get('error')}"
             status = 'failed'
             
@@ -169,6 +176,9 @@ async def transaction_executor(state: AgentState):
             "messages": [AIMessage(content=summary)],
             "next_step": END
         }
+    except Exception:
+        PURCHASE_REQUESTS.labels(status="error").inc()
+        raise
     finally:
         db.close()
 
