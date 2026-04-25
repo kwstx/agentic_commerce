@@ -2,22 +2,16 @@ from typing import TypedDict, List, Annotated, Sequence, Union
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
+from langchain_core.utils.function_calling import convert_to_openai_function
+from backend.agents.discovery import DiscoveryService, DiscoveryQuery, Product
 import operator
-from langchain_core.tools import tool
+import os
 
-@tool
-def search_products(query: str, max_price: float):
-    """Search for products matching the query and within the price range."""
-    # MOCK tool implementation
-    return [
-        {"id": "p1", "name": "AquaShield Pro 30L", "price": 129.99, "rating": 4.8},
-        {"id": "p2", "name": "Summit Trail Pack", "price": 145.00, "rating": 4.5}
-    ]
+# Initialize Discovery Service
+discovery_service = DiscoveryService()
+llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
-@tool
-def get_user_preferences(user_id: str):
-    """Retrieve user preferences from the database."""
-    return {"favorite_colors": ["blue", "black"], "size": "L"}
+# Removed mock tools as they are replaced by DiscoveryService logic
 
 # Define the state of our workflow
 class AgentState(TypedDict):
@@ -31,35 +25,47 @@ class AgentState(TypedDict):
 
 # --- Nodes ---
 
-def intent_parser(state: AgentState):
+async def intent_parser(state: AgentState):
     print("--- AGENT: INTENT PARSER ---")
-    # In reality: model.invoke([system_msg, HumanMessage(user_input)])
     user_input = state['messages'][-1].content
-    # MOCK: Extracting from "Find me a waterproof hiking backpack under $150"
-    intent = {
-        "item": "backpack",
-        "specs": ["waterproof", "hiking"],
-        "max_price": 150
-    }
+    
+    # Use LLM to convert natural language to structured DiscoveryQuery
+    parser_prompt = f"""
+    Analyze the user request and extract search parameters for product discovery.
+    Request: {user_input}
+    """
+    
+    # Bind the DiscoveryQuery to the LLM for structured output
+    structured_llm = llm.with_structured_output(DiscoveryQuery)
+    try:
+        discovery_query = await structured_llm.ainvoke(parser_prompt)
+        intent = discovery_query.dict()
+    except Exception as e:
+        print(f"Error in intent parsing: {e}")
+        # Fallback basic intent
+        intent = {"query": user_input, "limit": 5}
+
     return {
         "intent_data": intent, 
         "next_step": "discovery",
-        "messages": [AIMessage(content=f"Parsed intent: {intent['item']} with budget ${intent['max_price']}")]
+        "messages": [AIMessage(content=f"Searching for: {intent.get('query')} (Max Price: {intent.get('max_price', 'N/A')})")]
     }
 
-def product_discovery(state: AgentState):
+async def product_discovery(state: AgentState):
     print("--- AGENT: PRODUCT DISCOVERY ---")
-    intent = state['intent_data']
-    # MOCK: Search results based on intent
-    results = [
-        {"id": "p1", "name": "AquaShield Pro 30L", "price": 129.99, "rating": 4.8, "shipping": "Free"},
-        {"id": "p2", "name": "Summit Trail Pack", "price": 145.00, "rating": 4.5, "shipping": "$10"},
-        {"id": "p3", "name": "DryHike Elite", "price": 110.00, "rating": 4.2, "shipping": "Free"}
-    ]
+    intent_data = state['intent_data']
+    query = DiscoveryQuery(**intent_data)
+    
+    # Call the DiscoveryService (which handles caching and multi-source)
+    results: List[Product] = await discovery_service.search(query)
+    
+    # Convert results to dicts for state
+    results_dict = [p.dict() for p in results]
+    
     return {
-        "discovery_results": results, 
-        "next_step": "comparison",
-        "messages": [AIMessage(content=f"Found {len(results)} matches for your search.")]
+        "discovery_results": results_dict, 
+        "next_step": "comparison" if results else "error_recovery",
+        "messages": [AIMessage(content=f"Found {len(results)} matches across Shopify, Amazon, and Google Shopping.")]
     }
 
 def option_comparison(state: AgentState):

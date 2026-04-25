@@ -45,7 +45,7 @@ async def websocket_endpoint(websocket: WebSocket):
             
             # In a real app, this would be handled asynchronously
             # and might stream updates from each node
-            result = app_workflow.invoke(initial_state)
+            result = await app_workflow.ainvoke(initial_state)
             
             # Final response to user
             response = {

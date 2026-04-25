@@ -16,3 +16,7 @@ python-multipart
 httpx
 cryptography
 authlib
+playwright
+beautifulsoup4
+gql
+aioredis
