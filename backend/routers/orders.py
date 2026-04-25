@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 from datetime import datetime, timedelta
-from backend.database import User, ApprovalRequest, Transaction, SpendingLimit
-from backend.auth import get_current_user, get_db
 from backend.schemas import (
     ApprovalRequestResponse, TransactionDetail, 
-    TransactionSchema, PaymentIntentSchema
+    TransactionSchema, PaymentIntentSchema,
+    OrderSchema, AuditLogSchema
 )
+from backend.database import User, ApprovalRequest, Transaction, SpendingLimit, Order, AuditLog
 from backend.agents.checkout import CheckoutService
 from typing import List
 
@@ -101,3 +101,15 @@ async def confirm_order_payment(
         return payment_intent
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
+@router.get("/history", response_model=List[OrderSchema])
+def get_order_history(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Retrieves successful orders for the current user."""
+    return db.query(Order).filter(Order.user_id == current_user.id).order_by(Order.created_at.desc()).all()
+
+@router.get("/audit/{transaction_id}", response_model=List[AuditLogSchema])
+def get_transaction_audit(transaction_id: str, current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Retrieves the full audit trail for a specific transaction."""
+    return db.query(AuditLog).filter(
+        AuditLog.transaction_id == transaction_id, 
+        AuditLog.user_id == current_user.id
+    ).order_by(AuditLog.timestamp.asc()).all()

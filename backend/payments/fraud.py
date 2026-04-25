@@ -32,11 +32,10 @@ class RiskAnalyzer:
         if amount_cents > self.large_transaction_threshold:
             score += 0.3
             
-        # 3. Deviation from Mean
-        if history:
-            avg_amount = sum(tx['amount'] for tx in history) / len(history)
-            if amount_cents > avg_amount * 5:
-                score += 0.3
+        # 4. Bulk Purchase Check (High Quantity)
+        # Assuming we pass quantity or check against intent
+        if amount_cents > self.large_transaction_threshold * 2:
+            score += 0.5 # Immediate high risk for very large sums
 
         return min(score, 1.0)
 

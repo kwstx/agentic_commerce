@@ -55,3 +55,33 @@ def vault_payment_token(provider: str, token_ref: str, last_four: str, card_type
     db.add(new_token)
     db.commit()
     return {"message": "Payment token securely vaulted"}
+
+@router.get("/gdpr/export")
+def export_user_data(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """GDPR Requirement: Right to Data Portability"""
+    user_data = {
+        "user": {
+            "email": current_user.email,
+            "id": current_user.id
+        },
+        "preferences": current_user.preferences.get_preferences() if current_user.preferences else {},
+        "limits": {
+            "per_transaction": current_user.spending_limits.per_transaction_limit,
+            "daily": current_user.spending_limits.daily_limit
+        } if current_user.spending_limits else {},
+        "payment_tokens": [
+            {
+                "provider": t.provider,
+                "last_four": t.last_four,
+                "card_type": t.card_type
+            } for t in current_user.payment_tokens
+        ]
+    }
+    return user_data
+
+@router.delete("/gdpr/delete")
+def delete_user_account(current_user: User = Depends(get_current_user), db: Session = Depends(get_db)):
+    """GDPR Requirement: Right to Erasure (Right to be Forgotten)"""
+    db.delete(current_user)
+    db.commit()
+    return {"message": "User account and all associated data have been permanently deleted."}

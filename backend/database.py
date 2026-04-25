@@ -88,6 +88,32 @@ class Transaction(Base):
     status = Column(String)  # pending, completed, failed
     timestamp = Column(DateTime, default=datetime.utcnow)
 
+class AuditLog(Base):
+    __tablename__ = "audit_logs"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    transaction_id = Column(String, index=True) # Linked to a session/workflow
+    step = Column(String) # e.g., "inventory_check", "payment_processing"
+    action = Column(String) # e.g., "EXECUTE", "ROLLBACK"
+    decision = Column(Text) # LLM reasoning or rule-based decision
+    api_response_summary = Column(JSON) # Truncated/Summarized API response
+    status = Column(String) # success, failure
+    timestamp = Column(DateTime, default=datetime.utcnow)
+
+class Order(Base):
+    __tablename__ = "orders"
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    transaction_id = Column(String, unique=True)
+    merchant = Column(String)
+    items = Column(JSON)
+    total_amount = Column(Float)
+    confirmation_number = Column(String)
+    tracking_number = Column(String, nullable=True)
+    receipt_url = Column(String, nullable=True)
+    status = Column(String) # placed, shipped, delivered, cancelled
+    created_at = Column(DateTime, default=datetime.utcnow)
+
 # Engine & Session
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)

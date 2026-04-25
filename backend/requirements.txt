@@ -25,3 +25,11 @@ numpy
 scikit-learn
 stripe
 adyen-python-api-library
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp
+slowapi
+python-json-logger
+guardrails-ai
+bleach

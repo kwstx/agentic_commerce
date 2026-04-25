@@ -2,12 +2,13 @@ import stripe
 import os
 from typing import Optional, Dict, Any
 from backend.schemas import PaymentIntentSchema, PaymentStatus
+from backend.config import settings
 from backend.payments.fraud import RiskAnalyzer
 
 class StripePaymentService:
     def __init__(self):
-        stripe.api_key = os.getenv("STRIPE_SECRET_KEY")
-        self.webhook_secret = os.getenv("STRIPE_WEBHOOK_SECRET")
+        stripe.api_key = settings.STRIPE_SECRET_KEY.get_secret_value()
+        self.webhook_secret = settings.STRIPE_WEBHOOK_SECRET.get_secret_value()
         self.risk_analyzer = RiskAnalyzer()
 
     async def create_payment_intent(

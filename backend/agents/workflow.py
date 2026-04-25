@@ -1,4 +1,4 @@
-from typing import TypedDict, List, Annotated, Sequence, Union
+from typing import TypedDict, List, Annotated, Sequence, Union, Optional
 from langchain_openai import ChatOpenAI
 from langchain_core.messages import BaseMessage, HumanMessage, AIMessage
 from langgraph.graph import StateGraph, END
@@ -12,6 +12,13 @@ discovery_service = DiscoveryService()
 from backend.agents.intent import IntentAgent
 from backend.agents.comparison import ComparisonAgent, RankedProduct
 from backend.agents.checkout import CheckoutService, CartItem
+from backend.agents.coordinator import TransactionCoordinator
+from backend.websocket_manager import manager
+from backend.database import SessionLocal
+from backend.monitoring import get_tracer
+from backend.agents.guardrails import sanitize_user_input
+
+tracer = get_tracer()
 
 intent_agent = IntentAgent()
 comparison_agent = ComparisonAgent()
@@ -24,6 +31,7 @@ llm = ChatOpenAI(model="gpt-4o", temperature=0)
 class AgentState(TypedDict):
     messages: Annotated[Sequence[BaseMessage], operator.add]
     next_step: str
+    user_id: str
     intent_data: dict # Extracted constraints
     execution_plan: List[dict]
     is_ambiguous: bool
@@ -37,9 +45,21 @@ class AgentState(TypedDict):
 # --- Nodes ---
 
 async def intent_parser(state: AgentState):
-    print("--- AGENT: INTENT PARSER ---")
-    user_input = state['messages'][-1].content
-    history = state['messages'][:-1]
+    with tracer.start_as_current_span("intent_parser"):
+        print("--- AGENT: INTENT PARSER ---")
+        user_input = state['messages'][-1].content
+        
+        # Guardrail: Check for injection before processing
+        try:
+            user_input = sanitize_user_input(user_input)
+        except ValueError as e:
+            return {
+                "errors": [str(e)],
+                "next_step": END,
+                "messages": [AIMessage(content=f"Sorry, I cannot process your request: {str(e)}")]
+            }
+            
+        history = state['messages'][:-1]
     
     # Use IntentAgent for deep analysis and planning
     parsed_intent = await intent_agent.parse(user_input, history)
@@ -60,8 +80,9 @@ async def intent_parser(state: AgentState):
     }
 
 async def product_discovery(state: AgentState):
-    print("--- AGENT: PRODUCT DISCOVERY ---")
-    constraints = state['intent_data']
+    with tracer.start_as_current_span("product_discovery"):
+        print("--- AGENT: PRODUCT DISCOVERY ---")
+        constraints = state['intent_data']
     
     # Map constraints to DiscoveryQuery
     query = DiscoveryQuery(
@@ -107,11 +128,12 @@ async def option_comparison(state: AgentState):
     }
 
 async def transaction_executor(state: AgentState):
-    """Executes the checkout process for the selected product(s)."""
-    print("--- AGENT: TRANSACTION EXECUTOR ---")
+    """Executes the checkout process for the selected product(s) using the Coordinator."""
+    with tracer.start_as_current_span("transaction_executor"):
+        print("--- AGENT: TRANSACTION EXECUTOR ---")
     
-    # In a real flow, the user would have selected products from the ranked list.
-    # For now, we'll assume they chose the top-ranked item(s) if we're in 'executor' mode.
+    user_id = state.get('user_id', '1') # Fallback for demo
+    
     if not state.get('ranked_results'):
         return {"errors": ["No products found to buy."], "next_step": "error_recovery"}
         
@@ -127,23 +149,28 @@ async def transaction_executor(state: AgentState):
         metadata={"normalized_price": top_choice['normalized_price']}
     )
     
-    # 1. Create the universal cart
-    cart = await checkout_service.create_cart([cart_item])
+    # Initialize Coordinator with DB session and WS manager
+    db = SessionLocal()
+    coordinator = TransactionCoordinator(db, websocket_manager=manager)
     
-    # 2. Initiate checkout (state machine handles the process)
-    session = await checkout_service.initiate_checkout(cart)
-    
-    # Prepare summary for the user
-    summary = f"I've prepared your checkout! Total is ${session.final_total} (includes taxes and shipping).\n"
-    for attempt in session.attempts:
-        summary += f"- **{attempt.merchant}**: [Complete Checkout]({attempt.checkout_url})\n"
-
-    return {
-        "transaction_status": session.status,
-        "checkout_session": session.dict(),
-        "next_step": END,
-        "messages": [AIMessage(content=summary)]
-    }
+    try:
+        # Execute the atomic workflow
+        result = await coordinator.execute_transaction(user_id, [cart_item])
+        
+        if result['status'] == 'success':
+            summary = f"Transaction Successful! Order Confirmation: {result['orders'][0]['confirmation']}"
+            status = 'completed'
+        else:
+            summary = f"Transaction Failed: {result.get('error')}"
+            status = 'failed'
+            
+        return {
+            "transaction_status": status,
+            "messages": [AIMessage(content=summary)],
+            "next_step": END
+        }
+    finally:
+        db.close()
 
 def error_recovery(state: AgentState):
     # Logic to handle errors

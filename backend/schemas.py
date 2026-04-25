@@ -152,3 +152,29 @@ class PaymentStatus(str):
     PROCESSING = "processing"
     REQUIRES_ACTION = "requires_action"
     CANCELED = "canceled"
+
+class AuditLogSchema(BaseModel):
+    step: str
+    action: str
+    decision: str
+    api_response_summary: Dict[str, Any]
+    status: str
+    timestamp: datetime
+
+    class Config:
+        from_attributes = True
+
+class OrderSchema(BaseModel):
+    id: int
+    transaction_id: str
+    merchant: str
+    items: List[Dict[str, Any]]
+    total_amount: float
+    confirmation_number: str
+    tracking_number: Optional[str] = None
+    receipt_url: Optional[str] = None
+    status: str
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
