@@ -10,7 +10,9 @@ import os
 # Initialize Services
 discovery_service = DiscoveryService()
 from backend.agents.intent import IntentAgent
+from backend.agents.comparison import ComparisonAgent, RankedProduct
 intent_agent = IntentAgent()
+comparison_agent = ComparisonAgent()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 # Removed mock tools as they are replaced by DiscoveryService logic
@@ -23,6 +25,7 @@ class AgentState(TypedDict):
     execution_plan: List[dict]
     is_ambiguous: bool
     discovery_results: List[dict]
+    ranked_results: List[dict]
     comparison_summary: str
     transaction_status: str
     errors: List[str]
@@ -76,12 +79,24 @@ async def product_discovery(state: AgentState):
         "messages": [AIMessage(content=f"Found {len(results)} matches across Shopify, Amazon, and Google Shopping.")]
     }
 
-def option_comparison(state: AgentState):
+async def option_comparison(state: AgentState):
     print("--- AGENT: OPTION COMPARISON ---")
-    results = state['discovery_results']
-    # MOCK: Ranking and comparison
-    summary = "I found 3 great options. The 'AquaShield Pro 30L' is the best value at $129.99 with top reviews, while 'DryHike Elite' is the most budget-friendly at $110."
+    results = [Product(**p) for p in state['discovery_results']]
+    intent_data = state['intent_data']
+    
+    # Use ComparisonAgent to rank and justify
+    ranked_products: List[RankedProduct] = await comparison_agent.compare_and_rank(results, intent_data)
+    
+    # Generate summary for user
+    top_3 = ranked_products[:3]
+    summary_parts = ["I've ranked the best options for you based on price, features, and delivery:"]
+    for p in top_3:
+        summary_parts.append(f"{p.rank}. **{p.name}** ({p.merchant}) - ${p.normalized_price}: {p.justification}")
+    
+    summary = "\n\n".join(summary_parts)
+    
     return {
+        "ranked_results": [p.dict() for p in ranked_products],
         "comparison_summary": summary, 
         "next_step": "user_confirmation",
         "messages": [AIMessage(content=summary)]
