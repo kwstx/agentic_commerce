@@ -82,3 +82,47 @@ class TransactionSchema(BaseModel):
 
     class Config:
         from_attributes = True
+
+# Cart and Checkout Abstraction Schemas
+class CartItem(BaseModel):
+    product_id: str
+    name: str
+    quantity: int
+    price: float
+    merchant: str
+    variant_id: Optional[str] = None
+    currency: str = "USD"
+    metadata: Dict[str, Any] = {}
+
+class InternalCart(BaseModel):
+    items: List[CartItem] = []
+    subtotal: float = 0.0
+    taxes: float = 0.0
+    shipping: float = 0.0
+    discounts: float = 0.0
+    total: float = 0.0
+    currency: str = "USD"
+
+class CheckoutStatus(str):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    EXPIRED = "expired"
+
+class CheckoutAttempt(BaseModel):
+    id: str
+    cart: InternalCart
+    merchant: str
+    status: str = "pending"
+    provider_checkout_id: Optional[str] = None
+    checkout_url: Optional[str] = None
+    error_message: Optional[str] = None
+    created_at: datetime = datetime.now()
+    updated_at: datetime = datetime.now()
+
+class UnifiedCheckoutSession(BaseModel):
+    session_id: str
+    attempts: List[CheckoutAttempt] = []
+    final_total: float = 0.0
+    status: str = "pending"

@@ -11,8 +11,11 @@ import os
 discovery_service = DiscoveryService()
 from backend.agents.intent import IntentAgent
 from backend.agents.comparison import ComparisonAgent, RankedProduct
+from backend.agents.checkout import CheckoutService, CartItem
+
 intent_agent = IntentAgent()
 comparison_agent = ComparisonAgent()
+checkout_service = CheckoutService()
 llm = ChatOpenAI(model="gpt-4o", temperature=0)
 
 # Removed mock tools as they are replaced by DiscoveryService logic
@@ -28,6 +31,7 @@ class AgentState(TypedDict):
     ranked_results: List[dict]
     comparison_summary: str
     transaction_status: str
+    checkout_session: Optional[dict]
     errors: List[str]
 
 # --- Nodes ---
@@ -102,10 +106,44 @@ async def option_comparison(state: AgentState):
         "messages": [AIMessage(content=summary)]
     }
 
-def transaction_executor(state: AgentState):
-    # Logic to execute transaction
-    print("--- TRANSACTION EXECUTOR ---")
-    return {"transaction_status": "success", "next_step": END}
+async def transaction_executor(state: AgentState):
+    """Executes the checkout process for the selected product(s)."""
+    print("--- AGENT: TRANSACTION EXECUTOR ---")
+    
+    # In a real flow, the user would have selected products from the ranked list.
+    # For now, we'll assume they chose the top-ranked item(s) if we're in 'executor' mode.
+    if not state.get('ranked_results'):
+        return {"errors": ["No products found to buy."], "next_step": "error_recovery"}
+        
+    top_choice = state['ranked_results'][0]
+    
+    # Map ranked product to CartItem
+    cart_item = CartItem(
+        product_id=top_choice['id'],
+        name=top_choice['name'],
+        quantity=1,
+        price=top_choice['price'],
+        merchant=top_choice['merchant'],
+        metadata={"normalized_price": top_choice['normalized_price']}
+    )
+    
+    # 1. Create the universal cart
+    cart = await checkout_service.create_cart([cart_item])
+    
+    # 2. Initiate checkout (state machine handles the process)
+    session = await checkout_service.initiate_checkout(cart)
+    
+    # Prepare summary for the user
+    summary = f"I've prepared your checkout! Total is ${session.final_total} (includes taxes and shipping).\n"
+    for attempt in session.attempts:
+        summary += f"- **{attempt.merchant}**: [Complete Checkout]({attempt.checkout_url})\n"
+
+    return {
+        "transaction_status": session.status,
+        "checkout_session": session.dict(),
+        "next_step": END,
+        "messages": [AIMessage(content=summary)]
+    }
 
 def error_recovery(state: AgentState):
     # Logic to handle errors
